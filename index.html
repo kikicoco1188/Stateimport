@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0b5d4e">
+<meta name="description" content="Convert any bank statement CSV into a Xero bank statement import file. Runs entirely in your browser; nothing is uploaded or stored.">
+<title>Statement to Xero</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Statement to Xero</h1>
+    <p class="lede">Turn a bank statement CSV into a file Xero can import.</p>
+    <p class="privacy">Your file is read in this browser tab only. Nothing is uploaded, saved or cached, and everything is cleared the moment you download.</p>
+  </header>
+
+  <main>
+    <section id="step-upload" class="step" aria-labelledby="h-upload">
+      <h2 id="h-upload"><span class="n">1</span>Choose your statement</h2>
+      <input type="file" id="file" class="visually-hidden" accept=".csv,.tsv,.txt,text/csv,text/plain">
+      <label for="file" id="drop" class="drop">
+        <strong>Select a CSV file</strong>
+        <span>or drop it here. Bank exports with extra lines above the table are fine.</span>
+      </label>
+      <p id="error" class="msg error" role="alert" hidden></p>
+    </section>
+
+    <section id="step-map" class="step" aria-labelledby="h-map" hidden>
+      <div class="step-head">
+        <h2 id="h-map"><span class="n">2</span>Match the columns</h2>
+        <p class="filebar"><span id="fileName" class="fname"></span> <button type="button" id="btnClear" class="link">Remove file</button></p>
+      </div>
+      <p class="hint">We guessed these from your file. Change any that look wrong; the preview updates as you go.</p>
+
+      <div class="grid">
+        <div class="field full">
+          <label for="headerRow">Column names are on</label>
+          <select id="headerRow"></select>
+        </div>
+
+        <div class="field">
+          <label for="dateCol">Date <em>required</em></label>
+          <select id="dateCol" data-col></select>
+        </div>
+        <div class="field">
+          <label for="dateFmt">Dates in your file are written as</label>
+          <select id="dateFmt">
+            <option value="auto">Detect automatically</option>
+            <option value="DMY">Day / Month / Year</option>
+            <option value="MDY">Month / Day / Year</option>
+          </select>
+        </div>
+
+        <fieldset class="field full seg">
+          <legend>Amounts are in</legend>
+          <label><input type="radio" name="amountMode" value="single"><span>One column (money out is negative)</span></label>
+          <label><input type="radio" name="amountMode" value="split"><span>Separate money out and money in columns</span></label>
+        </fieldset>
+
+        <div class="field" id="boxSingle">
+          <label for="amountCol">Amount <em>required</em></label>
+          <select id="amountCol" data-col></select>
+        </div>
+        <div class="field" id="boxDebit" hidden>
+          <label for="debitCol">Money out (debit)</label>
+          <select id="debitCol" data-col></select>
+        </div>
+        <div class="field" id="boxCredit" hidden>
+          <label for="creditCol">Money in (credit)</label>
+          <select id="creditCol" data-col></select>
+        </div>
+
+        <div class="field full multi" data-multi="payee">
+          <span class="mlabel" id="lbl-payee">Payee</span>
+          <p class="mhint">Who the money went to or came from.</p>
+          <ul class="chips" aria-labelledby="lbl-payee"></ul>
+          <div class="mrow">
+            <select class="madd" aria-label="Add a column to Payee"></select>
+            <select class="mjoin" aria-label="How to combine the columns for Payee">
+              <option value=" - ">Join with " - "</option>
+              <option value=" ">Join with a space</option>
+              <option value=", ">Join with ", "</option>
+              <option value=" | ">Join with " | "</option>
+              <option value="first">Use first one that has a value</option>
+            </select>
+          </div>
+        </div>
+        <div class="field full multi" data-multi="desc">
+          <span class="mlabel" id="lbl-desc">Description</span>
+          <p class="mhint">Text shown against each transaction. Add several columns to combine them.</p>
+          <ul class="chips" aria-labelledby="lbl-desc"></ul>
+          <div class="mrow">
+            <select class="madd" aria-label="Add a column to Description"></select>
+            <select class="mjoin" aria-label="How to combine the columns for Description">
+              <option value=" - ">Join with " - "</option>
+              <option value=" ">Join with a space</option>
+              <option value=", ">Join with ", "</option>
+              <option value=" | ">Join with " | "</option>
+              <option value="first">Use first one that has a value</option>
+            </select>
+          </div>
+        </div>
+        <div class="field full multi" data-multi="ref">
+          <span class="mlabel" id="lbl-ref">Reference</span>
+          <p class="mhint">Use several columns to join them, or "first one that has a value" to fall back.</p>
+          <ul class="chips" aria-labelledby="lbl-ref"></ul>
+          <div class="mrow">
+            <select class="madd" aria-label="Add a column to Reference"></select>
+            <select class="mjoin" aria-label="How to combine the columns for Reference">
+              <option value=" - ">Join with " - "</option>
+              <option value=" ">Join with a space</option>
+              <option value=", ">Join with ", "</option>
+              <option value=" | ">Join with " | "</option>
+              <option value="first">Use first one that has a value</option>
+            </select>
+          </div>
+        </div>
+        <div class="field full multi" data-multi="check">
+          <span class="mlabel" id="lbl-check">Check number</span>
+          <p class="mhint">Cheque or check numbers, if your bank has them.</p>
+          <ul class="chips" aria-labelledby="lbl-check"></ul>
+          <div class="mrow">
+            <select class="madd" aria-label="Add a column to Check number"></select>
+            <select class="mjoin" aria-label="How to combine the columns for Check number">
+              <option value=" - ">Join with " - "</option>
+              <option value=" ">Join with a space</option>
+              <option value=", ">Join with ", "</option>
+              <option value=" | ">Join with " | "</option>
+              <option value="first">Use first one that has a value</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="outFmt">Dates in the Xero file</label>
+          <select id="outFmt">
+            <option value="DMY">DD/MM/YYYY</option>
+            <option value="MDY">MM/DD/YYYY</option>
+            <option value="YMD">YYYY-MM-DD</option>
+          </select>
+        </div>
+        <div class="field checks">
+          <label class="check"><input type="checkbox" id="invert"><span>Flip the sign of every amount</span></label>
+          <label class="check"><input type="checkbox" id="skipZero" checked><span>Leave out rows with a zero amount</span></label>
+        </div>
+      </div>
+    </section>
+
+    <section id="step-check" class="step" aria-labelledby="h-check" hidden>
+      <h2 id="h-check"><span class="n">3</span>Check and download</h2>
+      <dl class="stats" aria-live="polite">
+        <div><dt>Transactions</dt><dd id="sCount">0</dd></div>
+        <div><dt>Money in</dt><dd id="sIn" class="pos">0.00</dd></div>
+        <div><dt>Money out</dt><dd id="sOut" class="neg">0.00</dd></div>
+        <div><dt>Dates</dt><dd id="sDates">-</dd></div>
+      </dl>
+
+      <details id="warnBox" class="warn" hidden>
+        <summary id="warnSummary"></summary>
+        <ul id="warnList"></ul>
+      </details>
+      <p id="mapMsg" class="msg" hidden></p>
+
+      <div class="tablewrap" tabindex="0" role="region" aria-label="Preview of the Xero file">
+        <table>
+          <thead><tr><th>*Date</th><th class="num">*Amount</th><th>Payee</th><th>Description</th><th>Reference</th><th>Check Number</th></tr></thead>
+          <tbody id="preview"></tbody>
+        </table>
+      </div>
+      <p id="moreRows" class="hint"></p>
+
+      <div class="actions">
+        <button type="button" id="btnDownload" class="primary">Download Xero file</button>
+        <p class="hint">After the download, this page forgets your statement.</p>
+      </div>
+    </section>
+
+    <section id="step-done" class="step done" aria-live="polite" hidden>
+      <h2>Downloaded and cleared</h2>
+      <p id="doneMsg"></p>
+      <p>Your statement, the preview and the converted file have been removed from this page.</p>
+      <button type="button" id="btnAgain" class="primary">Convert another statement</button>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <button type="button" id="btnInstall" class="link" hidden>Install this app</button>
+    <p>Works offline once loaded. No account, no tracking, no server.</p>
+  </footer>
+</div>
+<script src="converter.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
