@@ -105,3 +105,8 @@ button{font:inherit;cursor:pointer}
 .chip button:disabled{opacity:.3;cursor:default}
 .mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 @media (max-width:640px){.mrow{grid-template-columns:1fr}}
+
+.drop.small{padding:20px 16px}
+.opt{font:400 .85rem var(--sans);color:var(--muted);font-style:normal}
+#masterBox .grid{margin-bottom:12px}
+#masterBox .check{margin-bottom:6px}

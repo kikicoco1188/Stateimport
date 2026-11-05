@@ -1,5 +1,5 @@
 /* Caches only the app's own static files so it works offline. It never sees or stores user data. */
-const CACHE = 'stmt2xero-v2';
+const CACHE = 'stmt2xero-v3';
 const SHELL = ['./', 'index.html', 'style.css', 'converter.js', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 
 self.addEventListener('install', e => {

@@ -44,7 +44,9 @@
       } else field += c;
     }
     if (field !== '' || row.length) { row.push(field); rows.push(row); }
-    return rows.map(r => r.map(c => c.replace(/\s+/g, ' ').trim()));
+    const out = rows.map(r => r.map(c => c.replace(/\s+/g, ' ').trim()));
+    out.delim = delim;
+    return out;
   }
 
   const isBlankRow = r => !r || r.every(c => c === '');
@@ -297,7 +299,88 @@
     return lines.join('\r\n') + '\r\n';
   }
 
-  const api = { parseCSV, detectHeaderRow, autoMap, convert, toXeroCSV, parseDate, parseAmount, isBlankRow, XERO_HEADER };
+  // ---------- Appending to an existing main file ----------
+  const MASTER_FIELDS = ['date', 'amount', 'payee', 'description', 'reference', 'check'];
+
+  // Guess which Xero field each column of the main file holds, from its header name.
+  function guessMasterFields(headers) {
+    const used = new Set();
+    return headers.map(h => {
+      const n = norm(h);
+      let f = '';
+      if (/^date\b/.test(n)) f = 'date';
+      else if (/^amount\b/.test(n)) f = 'amount';
+      else if (/^payee\b/.test(n)) f = 'payee';
+      else if (/^desc/.test(n)) f = 'description';
+      else if (/^ref/.test(n)) f = 'reference';
+      else if (/^(check|cheque)\b/.test(n)) f = 'check';
+      if (f && used.has(f)) f = '';
+      if (f) used.add(f);
+      return f;
+    });
+  }
+
+  // Which of the three date styles the main file already uses.
+  function detectMasterDateFormat(rows, headerRow, dateCol) {
+    if (dateCol < 0) return 'DMY';
+    for (let r = headerRow + 1; r < rows.length; r++) {
+      const v = (rows[r] && rows[r][dateCol]) || '';
+      if (/^\d{4}[-\/.]\d/.test(v)) return 'YMD';
+      if (v) break;
+    }
+    return detectDateOrder(rows, headerRow, dateCol);
+  }
+
+  // Returns the main file's rows with the new transactions added at the bottom.
+  // opts: { dedupe, masterFmt, newFmt }
+  function mergeIntoMaster(masterRows, headerRow, fieldMap, newOut, opts) {
+    const idx = f => fieldMap.indexOf(f);
+    const col = {};
+    MASTER_FIELDS.forEach(f => { col[f] = idx(f); });
+    const keyFields = ['description', 'reference', 'payee'].filter(f => col[f] >= 0);
+    const key = (d, a, get) => [d.y * 10000 + d.m * 100 + d.d, a.toFixed(2)].concat(keyFields.map(f => get(f).toLowerCase())).join('|');
+
+    const counts = new Map();
+    if (opts.dedupe) {
+      for (let r = headerRow + 1; r < masterRows.length; r++) {
+        const row = masterRows[r];
+        if (isBlankRow(row)) continue;
+        const d = parseDate(row[col.date] || '', opts.masterFmt), a = parseAmount(row[col.amount] || '');
+        if (!d || a === null) continue;
+        const k = key(d, a, f => row[col[f]] || '');
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+    }
+    const added = [];
+    let dupes = 0;
+    for (const o of newOut) {
+      if (opts.dedupe) {
+        const d = parseDate(o.date, opts.newFmt), a = parseAmount(o.amount);
+        if (d && a !== null) {
+          const k = key(d, a, f => o[f] || '');
+          if (counts.get(k) > 0) { counts.set(k, counts.get(k) - 1); dupes++; continue; }
+        }
+      }
+      added.push(o);
+    }
+    const rows = masterRows.slice();
+    while (rows.length > headerRow + 1 && isBlankRow(rows[rows.length - 1])) rows.pop();
+    const width = Math.max(fieldMap.length, (masterRows[headerRow] || []).length);
+    for (const o of added) {
+      const arr = new Array(width).fill('');
+      fieldMap.forEach((f, j) => { if (f) arr[j] = o[f] || ''; });
+      rows.push(arr);
+    }
+    return { rows, added, dupes, existing: Math.max(0, masterRows.length - headerRow - 1) };
+  }
+
+  function toCSVRows(rows, delim) {
+    const d = delim || ',';
+    const q = v => (v.indexOf(d) > -1 || /["\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v);
+    return rows.map(r => r.map(q).join(d)).join('\r\n') + '\r\n';
+  }
+
+  const api = { guessMasterFields, detectMasterDateFormat, mergeIntoMaster, toCSVRows, MASTER_FIELDS, parseCSV, detectHeaderRow, autoMap, convert, toXeroCSV, parseDate, parseAmount, isBlankRow, XERO_HEADER };
   root.Converter = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);

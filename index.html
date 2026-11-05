@@ -154,8 +154,26 @@
       </div>
     </section>
 
+    <section id="step-master" class="step" aria-labelledby="h-master" hidden>
+      <h2 id="h-master"><span class="n">3</span>Add to your main file <em class="opt">optional</em></h2>
+      <p class="hint">Keep a running CSV of your account? Choose it here and the converted transactions are added to the bottom of it. You then download the updated main file instead.</p>
+      <input type="file" id="masterFile" class="visually-hidden" accept=".csv,.tsv,.txt,text/csv,text/plain">
+      <label for="masterFile" id="masterDrop" class="drop small">
+        <strong>Select your main CSV</strong>
+        <span>or drop it here</span>
+      </label>
+      <p id="masterError" class="msg error" role="alert" hidden></p>
+      <div id="masterBox" hidden>
+        <p class="filebar"><span id="masterName" class="fname"></span> <button type="button" id="btnMasterClear" class="link">Remove main file</button></p>
+        <p class="hint">Say what each column of the main file holds. New transactions fill the columns you match; other columns are left blank.</p>
+        <div id="masterMap" class="grid"></div>
+        <label class="check"><input type="checkbox" id="dedupe" checked><span>Skip transactions that are already in the main file</span></label>
+        <p id="mergeInfo" class="msg" hidden></p>
+      </div>
+    </section>
+
     <section id="step-check" class="step" aria-labelledby="h-check" hidden>
-      <h2 id="h-check"><span class="n">3</span>Check and download</h2>
+      <h2 id="h-check"><span class="n">4</span>Check and download</h2>
       <dl class="stats" aria-live="polite">
         <div><dt>Transactions</dt><dd id="sCount">0</dd></div>
         <div><dt>Money in</dt><dd id="sIn" class="pos">0.00</dd></div>

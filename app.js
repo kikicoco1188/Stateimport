@@ -38,6 +38,7 @@
     $('step-done').hidden = true;
     $('step-map').hidden = false;
     $('step-check').hidden = false;
+    $('step-master').hidden = false;
     populateAll();
     refresh();
     $('step-map').scrollIntoView({ block: 'start' });
@@ -151,6 +152,26 @@
     const res = C.convert(session.rows, cfg);
     session.result = res;
 
+    // Optional: work out what would be added to the main file
+    session.merge = null;
+    const mst = session.master;
+    if (mst && mst.fieldMap.includes('date') && mst.fieldMap.includes('amount')) {
+      session.merge = C.mergeIntoMaster(mst.rows, mst.headerRow, mst.fieldMap, res.out,
+        { dedupe: $('dedupe').checked, masterFmt: mst.fmt, newFmt: cfg.outFmt });
+    }
+    const shown = session.merge ? session.merge.added : res.out;
+    const info = $('mergeInfo');
+    if (mst) {
+      if (!session.merge) info.textContent = 'Match a Date column and an Amount column of the main file above.';
+      else {
+        const m = session.merge;
+        info.textContent = m.added.length + ' new ' + (m.added.length === 1 ? 'transaction' : 'transactions') + ' will be added to the main file'
+          + (m.dupes ? ', and ' + m.dupes + ' already in it ' + (m.dupes === 1 ? 'is' : 'are') + ' skipped' : '')
+          + '. The main file will then have ' + (m.existing + m.added.length) + ' rows (it has ' + m.existing + ' now).';
+      }
+      info.hidden = false;
+    } else info.hidden = true;
+
     const missing = [];
     if (cfg.dateCol < 0) missing.push('a Date column');
     if (cfg.amountMode === 'single' && cfg.amountCol < 0) missing.push('an Amount column');
@@ -178,7 +199,7 @@
     // table
     const tb = $('preview');
     tb.textContent = '';
-    res.out.slice(0, PREVIEW_ROWS).forEach(o => {
+    shown.slice(0, PREVIEW_ROWS).forEach(o => {
       const tr = document.createElement('tr');
       [o.date, o.amount, o.payee, o.description, o.reference, o.check].forEach((v, i) => {
         const td = document.createElement('td');
@@ -189,21 +210,89 @@
       });
       tb.appendChild(tr);
     });
-    const more = res.out.length - PREVIEW_ROWS;
-    let note = more > 0 ? 'Showing the first ' + PREVIEW_ROWS + ' of ' + res.out.length + ' transactions.' : '';
+    const more = shown.length - PREVIEW_ROWS;
+    let note = more > 0 ? 'Showing the first ' + PREVIEW_ROWS + ' of ' + shown.length + (session.merge ? ' transactions to be added.' : ' transactions.') : '';
     if (res.zeroSkipped) note += (note ? ' ' : '') + res.zeroSkipped + ' zero-amount ' + (res.zeroSkipped === 1 ? 'row' : 'rows') + ' left out.';
     $('moreRows').textContent = note;
     $('moreRows').hidden = !note;
-    $('btnDownload').disabled = res.out.length === 0;
+    $('btnDownload').disabled = shown.length === 0 || (!!mst && !session.merge);
+    $('btnDownload').textContent = mst ? 'Download updated main file' : 'Download Xero file';
+  }
+
+  // ---------- Main file (optional) ----------
+  const FIELD_LABELS = [['', 'Leave blank'], ['date', 'Date'], ['amount', 'Amount'], ['payee', 'Payee'], ['description', 'Description'], ['reference', 'Reference'], ['check', 'Check Number']];
+
+  async function loadMaster(file) {
+    const err = $('masterError');
+    err.hidden = true;
+    clearMaster();
+    if (!file || !session) return;
+    const fail = m => { err.textContent = m; err.hidden = false; };
+    if (/\.(xlsx|xls|xlsm|pdf|ods|zip)$/i.test(file.name)) { fail('Only CSV files work here. In Excel, choose Save As, then CSV, and try again.'); return; }
+    if (file.size > 25 * 1024 * 1024) { fail('That file is over 25 MB.'); return; }
+    let text;
+    try { text = await file.text(); } catch (e) { fail('That file could not be read.'); return; }
+    if (text.indexOf('\u0000') !== -1 || text.slice(0, 2) === 'PK') { fail('That file is not plain text. Save it as CSV and try again.'); return; }
+    if (!session) return;
+    const rows = C.parseCSV(text);
+    text = null;
+    if (!rows.some(r => !C.isBlankRow(r))) { fail('That file looks empty.'); return; }
+    const headerRow = C.detectHeaderRow(rows);
+    const fieldMap = C.guessMasterFields(rows[headerRow] || []);
+    const fmt = C.detectMasterDateFormat(rows, headerRow, fieldMap.indexOf('date'));
+    session.master = { name: file.name, rows, headerRow, fieldMap, fmt, delim: rows.delim || ',' };
+    $('outFmt').value = fmt; // new rows follow the date style the main file already uses
+    $('masterName').textContent = file.name;
+    $('masterDrop').hidden = true;
+    $('masterBox').hidden = false;
+    renderMasterMap();
+    refresh();
+  }
+
+  function renderMasterMap() {
+    const m = session.master, headers = m.rows[m.headerRow] || [];
+    const box = $('masterMap');
+    box.textContent = '';
+    headers.forEach((h, j) => {
+      const wrap = document.createElement('div'); wrap.className = 'field';
+      const lab = document.createElement('label'); lab.textContent = colLetter(j) + ': ' + (h || '(no name)');
+      const sel = document.createElement('select');
+      sel.setAttribute('aria-label', 'What column ' + colLetter(j) + ' (' + (h || 'no name') + ') of the main file holds');
+      FIELD_LABELS.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+      sel.value = m.fieldMap[j] || '';
+      sel.addEventListener('change', () => { m.fieldMap[j] = sel.value; refresh(); });
+      wrap.appendChild(lab); wrap.appendChild(sel); box.appendChild(wrap);
+    });
+  }
+
+  function clearMaster() {
+    if (session) { session.master = null; session.merge = null; }
+    $('masterFile').value = '';
+    $('masterName').textContent = '';
+    $('masterMap').textContent = '';
+    $('mergeInfo').textContent = '';
+    $('mergeInfo').hidden = true;
+    $('masterBox').hidden = true;
+    $('masterDrop').hidden = false;
   }
 
   // ---------- Download + wipe ----------
   function download() {
     if (!session || !session.result || !session.result.out.length) return;
-    const count = session.result.out.length;
-    const base = session.name.replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'statement';
-    const fileName = 'xero-' + base + '.csv';
-    const blob = new Blob([C.toXeroCSV(session.result.out)], { type: 'text/csv;charset=utf-8' });
+    const mst = session.master;
+    let csv, fileName, count;
+    if (mst && session.merge) {
+      if (!session.merge.added.length) return;
+      csv = C.toCSVRows(session.merge.rows, mst.delim);
+      count = session.merge.added.length;
+      fileName = 'updated-' + (mst.name.replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'main') + '.csv';
+    } else {
+      csv = C.toXeroCSV(session.result.out);
+      count = session.result.out.length;
+      const base = session.name.replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'statement';
+      fileName = 'xero-' + base + '.csv';
+    }
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = fileName; a.rel = 'noopener';
@@ -211,7 +300,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     wipe(true);
     $('step-upload').hidden = true;
-    $('doneMsg').textContent = fileName + ' (' + count + (count === 1 ? ' transaction' : ' transactions') + ') was saved to your downloads.';
+    $('doneMsg').textContent = fileName + ' (' + count + (count === 1 ? ' new transaction' : ' new transactions') + (mst ? ' added' : '') + ') was saved to your downloads.';
     $('step-done').hidden = false;
     $('step-done').scrollIntoView({ block: 'start' });
   }
@@ -230,7 +319,10 @@
     $('sDates').textContent = '-';
     ['headerRow'].concat(COL_KEYS).forEach(id => { $(id).textContent = ''; });
     document.querySelectorAll('[data-multi] .chips, [data-multi] .madd').forEach(el => { el.textContent = ''; });
+    clearMaster();
+    $('masterError').hidden = true;
     $('step-map').hidden = true;
+    $('step-master').hidden = true;
     $('step-check').hidden = true;
     showError('');
     if (!keepScreen) { $('step-done').hidden = true; $('step-upload').hidden = false; }
@@ -255,6 +347,13 @@
   document.querySelectorAll('input[name=amountMode]').forEach(r => r.addEventListener('change', () => { toggleAmountMode(r.value); refresh(); }));
   COL_KEYS.concat(['dateFmt', 'outFmt', 'invert', 'skipZero']).forEach(id => $(id).addEventListener('change', refresh));
 
+  $('masterFile').addEventListener('change', e => loadMaster(e.target.files && e.target.files[0]));
+  const mdrop = $('masterDrop');
+  ['dragenter', 'dragover'].forEach(t => mdrop.addEventListener(t, e => { e.preventDefault(); mdrop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => mdrop.addEventListener(t, e => { e.preventDefault(); mdrop.classList.remove('over'); }));
+  mdrop.addEventListener('drop', e => loadMaster(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]));
+  $('btnMasterClear').addEventListener('click', () => { clearMaster(); refresh(); });
+  $('dedupe').addEventListener('change', refresh);
   $('btnDownload').addEventListener('click', download);
   $('btnClear').addEventListener('click', () => wipe(false));
   $('btnAgain').addEventListener('click', () => wipe(false));
